@@ -22,7 +22,7 @@ A quarterly momentum rotation strategy implemented in R, backtested on three U.S
 | Sharpe Ratio (annualised)    | 0.86        | 0.77        |
 | Number of Rebalances         | 29          | –           |
 
-> ⚠️ The portfolio significantly outperformed the benchmark, but with deeper drawdowns and higher concentration risk—especially from Microsoft’s AI-driven rally post-2022.
+> The portfolio significantly outperformed the benchmark, but with deeper drawdowns and higher concentration risk—especially from Microsoft’s AI-driven rally post-2022.
 
 ## Visuals
 
