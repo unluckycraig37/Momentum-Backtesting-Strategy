@@ -1,0 +1,986 @@
+---
+title: "AMA 3232 Momentum Back Test Report"
+author: "Craig, Ashley & Ben"
+date: "2026-04-18"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Introduction**
+
+In physics, momentum is the product of an object’s mass and velocity. Newton’s first law teaches us that an object in motion tends to stay in motion unless acted upon by an external force. In financial markets, a strikingly similar phenomenon occurs: stocks that have been rising strongly often continue to rise, and those falling often continue to fall, until a significant market shock intervenes. This persistence of price trends is known as momentum, and it has become one of the most robust anomalies in quantitative finance, first documented by Jegadeesh and Titman (1993).
+
+Our project implements a momentum strategy on three stocks from different sectors: Microsoft (technology), Morgan Stanley (financials), and ADMA Biologics (biotech). We rank them monthly by average daily return, then rebalance quarterly with a 37.5/37.5/25 weight tilt, incurring 0.5% transaction costs. The backtest runs from 2016 to 2025, benchmarked against the S&P 500.
+
+A key principle guides us: backtesting does not develop good strategies — it finds bad ones (StarQube, 2025). Our goal is not to claim a winning formula, but to test whether our rule survives falsification. Through this, we have learned that even strong historical performance must be interpreted with humility. Future improvements could include more stocks, a stop‑loss, or dynamic rebalancing.
+
+**Industry and Stock Rationale**
+
+**Microsoft - Technology**
+
+Microsoft is a software company that produces operating system software and has produced many world‑leading products such as the operating systems of Windows XP, 7, and 10, Office 365 suites that include Word, Excel and PowerPoint, and cloud computing services like OneDrive. Although the company was relatively successful in late 2015, Blackden (2015) notes that the company had its worst weeks of trading in the middle of 2015, losing $3.2 billion due to its failed purchase of Nokia and a slowdown in the PC market. Furthermore, Kelly (2016) reports that Microsoft started to abandon its disastrous Windows 8 product which was poorly received by customers. Additionally, Kelly (2016) highlights that a majority of customers were still using older versions such as XP (10.93%) and 7 (55.68%).
+
+However, at the end of the year, there was great optimism that the company’s fortunes were changing. Microsoft (2015) launched new products that we now know such as Windows 10, Office 365 and also started new cloud computing services like Azure and OneDrive for commercial use. Waters (2016) adds that these moves gave Microsoft the ability to tap into the market of Internet of Things which was estimated to be worth $206 billion by 2020 in early 2016.
+
+**Morgan Stanley - Finance**
+
+Morgan Stanley is one of the biggest global financial services firms. It offers investment banking, securities trading, wealth management, and asset management to institutional and high‑net‑worth clients. The company had a tough time in early 2016 when net income dropped sharply in the first quarter. This was mostly because fixed‑income and commodities trading revenues fell by 54% due to market volatility, the energy slump, and fewer clients (Gara, 2016). It was also dealing with old problems, like a $3.2 billion settlement over bad mortgage‑backed securities from the financial crisis (Popper, 2016). Morgan Stanley also reorganised its fixed‑income and commodities business in late 2015. They cut jobs and significantly lowered risk‑weighted assets to comply with stricter rules and a smaller revenue base (Morgan Stanley, 2016).
+
+By late 2016, there was growing optimism around the company’s direction. Morgan Stanley reported record pre‑tax margins in wealth management (reaching 22% in 2015 with potential to hit 23–25%), strong rankings in M&A advisory and equity trading, and launched Project Streamline to deliver $1 billion in cost savings through disciplined expense management (Morgan Stanley, 2016). These moves supported a shift toward more stable fee‑based revenues, net interest income growth, and a less volatile business model overall.
+
+**ADMA Biologics – Biotechnology**
+
+ADMA Biologics is a biopharmaceutical company specialising in plasma‑derived biologics for immune deficiencies. By 2019, after FDA approval of its flagship products ASCENIV and BIVIGAM, ADMA transformed from a pre‑commercial developer into a profitable, vertically integrated firm (ADMA Biologics, 2025).
+
+ASCENIV treats primary humoral immunodeficiency (PI) in adults and adolescents (ADMA Biologics, n.d.). Its patented manufacturing process screens plasma donors for naturally high antibodies against respiratory viruses, delivering a more targeted immune boost.
+
+**Competitive Advantages:**
+
+1. Vertical integration – Owns plasma collection centres and an FDA‑licensed manufacturing facility, controlling supply and margins.
+
+2. Patents – Protect ASCENIV through at least June 2035; no direct competitor with the same technology.
+
+3. Clinical efficacy – Phase III trial recorded zero serious bacterial infections over one year.
+
+**Growth opportunity**
+
+Globally, ~6 million people have PI, but only ~27,000–60,000 are diagnosed (Lehrnbecher et al., 2025). Newborn screening is expanding rapidly: over 40 countries now screen, including all 50 U.S. states, Russia (since 2023), Ukraine (since 2022), and China (since 2025) (Marakhonov et al., 2026; MedTech, 2025). Each newly diagnosed child becomes a potential long‑term user of immunoglobulin therapy.
+
+**Financial performance**
+
+By end‑2025, ADMA achieved \$510.2 million revenue (+20% YoY), with ASCENIV contributing \$363 million (+51% YoY). Gross margin improved to 57.4% from 51.5% (ADMA Biologics, 2025, 2026). Management guides 2026 revenue to ~\$635 million and 2029 target greater than \$1.1 billion.
+
+The following tables present the annualised return and volatility, as well as the correlation matrix, for the three stocks in our portfolio, calculated from daily log returns over the full 10‑year sample period.
+
+```{r stock-summary, echo=FALSE, warning=FALSE,message=FALSE,results='asis'}
+library(quantmod)
+library(knitr)
+
+# Download adjusted close prices for our three stocks
+ADMA <- getSymbols("ADMA", src = 'yahoo', from = "2016-01-01", to = "2025-12-31", auto.assign = FALSE)
+MSFT <- getSymbols("MSFT", src = 'yahoo', from = "2016-01-01", to = "2025-12-31", auto.assign = FALSE)
+MS   <- getSymbols("MS",   src = 'yahoo', from = "2016-01-01", to = "2025-12-31", auto.assign = FALSE)
+
+stock_returns <- merge(
+    dailyReturn(ADMA$ADMA.Close, type = "log"),
+    dailyReturn(MSFT$MSFT.Close, type = "log"),
+    dailyReturn(MS$MS.Close, type = "log")
+)
+colnames(stock_returns) <- c("ADMA", "MSFT", "MS")
+
+annual_return <- colMeans(stock_returns, na.rm = TRUE) * 252
+annual_vol    <- apply(stock_returns, 2, sd, na.rm = TRUE) * sqrt(252)
+corr_matrix   <- cor(stock_returns, use = "complete.obs")
+
+summary_table <- data.frame(
+  `Annualized Return (%)`     = round(annual_return * 100, 2),
+  `Annualized Volatility (%)` = round(annual_vol * 100, 2),
+  check.names = FALSE
+)
+
+# Print tables using kable
+kable(summary_table, caption = "Annualised Return and Volatility (2016–2025)", booktabs = TRUE)
+kable(round(corr_matrix, 3), caption = "Correlation Matrix (Daily Log Returns)", booktabs = TRUE)
+```
+
+Together, these statistics reveal a portfolio with complementary risk‑return profiles. Microsoft offers the highest return with the lowest volatility, serving as a stable growth anchor. Morgan Stanley provides a solid return with moderate volatility, adding cyclical financial exposure. ADMA, despite its modest return and very high volatility, contributes extremely low correlations with the other two stocks (below 0.21), which enhances overall portfolio diversification. The moderate correlation between Microsoft and Morgan Stanley (0.50) reflects shared market drivers but still allows for sector‑specific divergences. This combination of return, risk, and correlation patterns makes the three stocks suitable candidates for a momentum‑based rotation strategy, as their performance differences create meaningful ranking signals each quarter.
+
+**Data Preparation**
+
+The analysis begins by gathering daily adjusted close prices for the three selected stocks — ADMA Biologics (ADMA), Microsoft (MSFT), and Morgan Stanley (MS) — as well as the S&P 500 index as a benchmark. The sample period runs from 1 January 2016 to 31 December 2025, providing a decade of data to evaluate the momentum strategy under varying market conditions.
+
+All data are downloaded directly from Yahoo Finance using the `getSymbols()` function from the `quantmod` package in R. The `auto.assign = FALSE` argument ensures each dataset is stored as a separate object. Adjusted close prices are used because they account for dividends and stock splits, making them appropriate for return calculations.
+
+```{r, eval=TRUE}
+library(quantmod)
+
+ADMA <- getSymbols("ADMA", src = 'yahoo', 
+                   from = "2016-01-01", to = "2025-12-31", 
+                   auto.assign = FALSE)
+MSFT <- getSymbols("MSFT", src = 'yahoo', 
+                   from = "2016-01-01", to = "2025-12-31", 
+                   auto.assign = FALSE)
+MS   <- getSymbols("MS",   src = 'yahoo', 
+                   from = "2016-01-01", to = "2025-12-31", 
+                   auto.assign = FALSE)
+sp500 <- getSymbols("^GSPC", src = 'yahoo', 
+                    from = "2016-01-01", to = "2025-12-31", 
+                    auto.assign = FALSE)
+```
+
+A quick check confirms there are no missing values in any of the four series. More importantly, a date alignment check verifies that all four objects contain exactly the same number of trading days (2,513 rows). This ensures that portfolio returns, momentum rankings, and benchmark comparisons are all based on identical trading calendars, eliminating the need for any date‑handling procedures such as forward filling or omission.
+
+```{r}
+sum(is.na(ADMA))   # 0
+sum(is.na(MSFT))   # 0
+sum(is.na(MS))     # 0
+sum(is.na(sp500))  # 0
+
+cat("\n=== Date Alignment Check ===\n")
+cat("ADMA rows:", nrow(ADMA), "| MSFT rows:", nrow(MSFT), 
+    "| MS rows:", nrow(MS), "| S&P 500 rows:", nrow(sp500), "\n")
+# All series contain 2,513 rows – no missing dates require handling.
+```
+
+From these aligned price series, daily returns are computed. Simple percentage returns (daily changes) are used for the momentum ranking signals, while log returns are calculated separately for summary statistics such as annualised return, annualised volatility, and the correlation matrix. Returns, rather than raw prices, are used because they normalise different price levels and allow direct comparison across assets.
+
+The data preparation also involves creating a monthly momentum dataset. For each stock, the average daily return within each calendar month is calculated. These monthly averages become the raw signals for the quarterly ranking process: the strategy looks back over the most recent three months, ranks the stocks from strongest to weakest performer, and then combines the rankings to determine portfolio weights for the next quarter. This conversion from daily prices to monthly momentum signals is the essential link between raw market data and the strategy’s trading rules.
+
+Finally, the S&P 500 benchmark is prepared in the same way: the adjusted close series is aligned with the portfolio’s dates, and daily returns are computed. This ensures that comparisons between the strategy and the US equity market are based on identical time frames and calculation methods.
+
+**Strategy Construction and Trading Rules**
+
+Our strategy is a momentum rotation model with quarterly rebalancing. The goal is to allocate more capital to stocks that have shown stronger recent performance, while still maintaining diversification across all three assets.
+
+**Initial Setup**
+
+The strategy starts with USD 1,000,000, split equally among the three stocks on the first trading day of the sample period (33.33% each). This creates a neutral starting point before momentum rankings begin to influence weights.
+
+**Momentum Signal and Ranking**
+
+Each month, we compute the average daily percentage change for each stock. The stock with the highest average is ranked 1st (best momentum), the middle 2nd, and the lowest 3rd. These monthly rankings are stored.
+
+**Quarterly Rebalancing**
+
+On the first trading day of January, April, July, and October, we look back at the previous three months’ rankings and calculate the average rank for each stock. The stock with the lowest average rank becomes the top seed, the next becomes the middle seed, and the highest average becomes the bottom seed.
+
+**Target Weights**
+
+- Top seed: 37.5%
+
+- Middle seed: 37.5%
+
+- Bottom seed: 25%
+
+This weighting keeps the portfolio fully invested, tilts toward better performers, and avoids over‑concentration in any single stock.
+
+**Constraints**
+
+The strategy is long‑only, uses no leverage, and does not allow short selling. All weights always sum to 100%.
+
+**Transaction costs **
+
+Each rebalance incurs a cost of 0.5% of turnover (the value of shares traded). The cost is deducted from the portfolio value on the rebalancing day, ensuring the backtest reflects real‑world frictions.
+
+**Between rebalancing dates**
+
+The portfolio value evolves with daily price movements of the held stocks. No trading occurs between quarterly rebalancing dates, which reduces turnover and focuses the momentum signal on medium‑term trends rather than daily noise.
+
+The following code chunk implements the initial portfolio setup, including the equal‑weight split and variable initialisation.
+
+```{r initial-setup, echo=TRUE, eval=TRUE}
+Capital <- 1000000          # Starting capital = $1,000,000 USD
+
+# Initial equal-weight allocation (33.33% each) on Day 1
+shares_bought <- c((Capital/3)/ADMA$ADMA.Close[[1]],
+                   (Capital/3)/MSFT$MSFT.Close[[1]],
+                   (Capital/3)/MS$MS.Close[[1]])
+
+weights        <- c(rep(1/3, 3))      # Current weights (will be updated quarterly)
+target_weights <- c(0.375, 0.375, 0.25)  # Target weights after ranking: 37.5/37.5/25
+
+trades           <- 0                 # Counter for number of rebalances
+portfolio_value  <- Capital           # Current portfolio value
+daily_portfolio  <- c()               # Vector to store daily portfolio values
+```
+
+
+**Backtesting Procedure**
+
+The backtesting procedure translates the strategy rules into a step‑by‑step simulation over the 2016–2025 period. All code is written in R and is fully reproducible.
+
+**Daily tracking: Quarterly Rebalancing**
+
+The simulation processes each trading day sequentially. Portfolio value is updated daily using the current share holdings and the day’s closing prices. Actual rebalancing occurs only on the first trading day of January, April, July, and October – after at least three months of data have been accumulated. This mimics a realistic buy‑and‑hold approach within each quarter.
+
+**Avoiding look‑ahead bias**
+
+Rebalancing decisions are based exclusively on momentum rankings computed from month‑end data that would have been available at that time. No future information is used.
+
+**Rebalancing mechanics**
+
+On a rebalancing day, the code:
+
+- Retrieves the monthly rankings for the previous three months.
+
+- Calculates each stock’s average rank to determine top, middle, and bottom seeds.
+
+- Sets target weights (37.5% / 37.5% / 25%).
+
+- Computes turnover (half the sum of absolute weight differences) and deducts a 0.5% transaction cost.
+
+- Updates the portfolio value and recalculates share quantities using the current prices.
+
+**Transaction Costs and Benchmark**
+
+Every rebalance incurs a 0.5% cost on the turnover amount, which is subtracted immediately. An equivalent buy‑and‑hold investment in the S&P 500 is tracked in parallel, allowing a fair comparison of returns, drawdowns, and Sharpe ratios.
+
+**Output metrics**
+
+After the final day, the code reports total return, annualised return, maximum drawdown, number of trades, and annualised Sharpe ratio for both the strategy and the benchmark.
+
+The full backtest loop is shown below.
+
+```{r backtest-loop, echo=TRUE, eval=TRUE}
+# This is the core of the strategy: quarterly momentum ranking + rebalancing
+
+last_row <- nrow(ADMA)      # Total number of trading days
+current_row <- 1            # Pointer to the current trading day we are processing
+
+while (current_row <= last_row) {
+  
+  # Monthly Ranking (we process 3 months at a time = 1 quarter)
+  n_quarters <- 0
+  monthly_rankings <- list(month1 = c(), month2 = c(), month3 = c())
+  
+  for (quarter in 1:3) {
+    
+    if (current_row > last_row) break
+    
+    # ------------------- Find the last trading day of this month -------------
+    month_start   <- current_row
+    iterative_day <- current_row
+    month         <- as.integer(substring(as.character(index(ADMA)[iterative_day]), 6, 7))
+    
+    month0 <- month
+    x      <- iterative_day
+    while (x < last_row) {
+      next_day_month <- as.integer(substring(as.character(index(ADMA)[x + 1]), 6, 7))
+      if (next_day_month != month0) break
+      x <- x + 1
+    }
+    month_end <- x                     # Last trading day of the current month
+    
+    # Safety check for very short/partial months at the end of data
+    if (month_end < month_start) {
+      current_row <- last_row + 1
+      break
+    }
+    
+    # ------------------- Record portfolio value on first day of month --------
+    A_day0  <- ADMA$ADMA.Close[[month_start]]
+    Mi_day0 <- MSFT$MSFT.Close[[month_start]]
+    Ms_day0 <- MS$MS.Close[[month_start]]
+    
+    portfolio_value <- A_day0 * shares_bought[1] +
+      Mi_day0 * shares_bought[2] +
+      Ms_day0 * shares_bought[3]
+    daily_portfolio <- c(daily_portfolio, portfolio_value)
+    
+    # ------------------- Calculate daily momentum for the month --------------
+    day_change <- list(ADMA = c(), MSFT = c(), MS = c())
+    
+    for (i in (month_start + 1):month_end) {
+      A_day  <- ADMA$ADMA.Close[[i]]
+      Mi_day <- MSFT$MSFT.Close[[i]]
+      Ms_day <- MS$MS.Close[[i]]
+      
+      # Daily percentage return (no look-ahead bias)
+      A_pct  <- (A_day  / A_day0 - 1) * 100
+      Mi_pct <- (Mi_day / Mi_day0 - 1) * 100
+      Ms_pct <- (Ms_day / Ms_day0 - 1) * 100
+      
+      day_change$ADMA <- c(day_change$ADMA, A_pct)
+      day_change$MSFT <- c(day_change$MSFT, Mi_pct)
+      day_change$MS   <- c(day_change$MS,   Ms_pct)
+      
+      # Update portfolio value for this day
+      portfolio_value <- A_day * shares_bought[1] + 
+        Mi_day * shares_bought[2] + 
+        Ms_day * shares_bought[3]
+      daily_portfolio <- c(daily_portfolio, portfolio_value)
+      
+      # Move forward one day
+      A_day0  <- A_day
+      Mi_day0 <- Mi_day
+      Ms_day0 <- Ms_day
+    }
+    
+    # ------------------- Rank the stocks based on average daily return -------
+    average_day_change <- c(mean(day_change$ADMA), 
+                            mean(day_change$MSFT), 
+                            mean(day_change$MS))
+    
+    seed1 <- which.max(average_day_change)   # Best performer
+    seed3 <- which.min(average_day_change)   # Worst performer
+    seed2 <- 6 - seed1 - seed3               # Middle performer
+    
+    # Store ranking for this month (used for voting later)
+    if (seed1 == 1 & seed2 == 2 & seed3 == 3) {
+      monthly_rankings[[quarter]] <- c("ADMA", "MSFT", "MS")
+    } else if (seed1 == 1 & seed2 == 3 & seed3 == 2) {
+      monthly_rankings[[quarter]] <- c("ADMA", "MS", "MSFT")
+    } else if (seed1 == 2 & seed2 == 1 & seed3 == 3) {
+      monthly_rankings[[quarter]] <- c("MSFT", "ADMA", "MS")
+    } else if (seed1 == 2 & seed2 == 3 & seed3 == 1) {
+      monthly_rankings[[quarter]] <- c("MSFT", "MS", "ADMA")
+    } else if (seed1 == 3 & seed2 == 2 & seed3 == 1) {
+      monthly_rankings[[quarter]] <- c("MS", "MSFT", "ADMA")
+    } else if (seed1 == 3 & seed2 == 1 & seed3 == 2) {
+      monthly_rankings[[quarter]] <- c("MS", "ADMA", "MSFT")
+    }
+    
+    # Move to the next month
+    current_row <- month_end + 1
+    n_quarters  <- n_quarters + 1
+  }
+  
+  # --------------------- 4. REBALANCING (only after full 3-month quarter) -----
+  if (n_quarters == 3) {
+    
+    # Voting: count how many times each stock ranked 1st, 2nd, or 3rd
+    A_ranks  <- c()
+    Mi_ranks <- c()
+    Ms_ranks <- c()
+    
+    for (i in 1:3) {
+      if (monthly_rankings[[i]][1] == "ADMA") A_ranks  <- c(A_ranks,  1)
+      if (monthly_rankings[[i]][1] == "MSFT") Mi_ranks <- c(Mi_ranks, 1)
+      if (monthly_rankings[[i]][1] == "MS")   Ms_ranks <- c(Ms_ranks, 1)
+      
+      if (monthly_rankings[[i]][2] == "ADMA") A_ranks  <- c(A_ranks,  2)
+      if (monthly_rankings[[i]][2] == "MSFT") Mi_ranks <- c(Mi_ranks, 2)
+      if (monthly_rankings[[i]][2] == "MS")   Ms_ranks <- c(Ms_ranks, 2)
+      
+      if (monthly_rankings[[i]][3] == "ADMA") A_ranks  <- c(A_ranks,  3)
+      if (monthly_rankings[[i]][3] == "MSFT") Mi_ranks <- c(Mi_ranks, 3)
+      if (monthly_rankings[[i]][3] == "MS")   Ms_ranks <- c(Ms_ranks, 3)
+    }
+    
+    mean_A_ranks  <- mean(A_ranks)
+    mean_Mi_ranks <- mean(Mi_ranks)
+    mean_Ms_ranks <- mean(Ms_ranks)
+    
+    # Tie-breaker logic (use the most recent ranking)
+    if (mean_A_ranks == mean_Mi_ranks & mean_A_ranks == mean_Ms_ranks & mean_Ms_ranks == mean_Mi_ranks) {
+      mean_A_ranks  <- A_ranks[3]
+      mean_Mi_ranks <- Mi_ranks[3]
+      mean_Ms_ranks <- Ms_ranks[3]
+    } else if (mean_A_ranks == mean_Ms_ranks) {
+      mean_A_ranks  <- A_ranks[3]
+      mean_Ms_ranks <- Ms_ranks[3]
+    } else if (mean_A_ranks == mean_Mi_ranks) {
+      mean_A_ranks  <- A_ranks[3]
+      mean_Mi_ranks <- Mi_ranks[3]
+    } else if (mean_Ms_ranks == mean_Mi_ranks) {
+      mean_Ms_ranks <- Ms_ranks[3]
+      mean_Mi_ranks <- Mi_ranks[3]
+    }
+    
+    ranks <- c(mean_A_ranks, mean_Mi_ranks, mean_Ms_ranks)
+    
+    topseed    <- which.min(ranks)      # Best overall
+    bottomseed <- which.max(ranks)      # Worst overall
+    middle     <- 6 - topseed - bottomseed
+    
+    # Apply new target weights
+    target_weights[topseed]    <- 0.375
+    target_weights[middle]     <- 0.375
+    target_weights[bottomseed] <- 0.25
+    
+    # Calculate turnover and transaction costs (0.5%)
+    turnover        <- 0.5 * sum(abs(target_weights - weights))
+    turnover_dollar <- turnover * portfolio_value
+    transaction_cost <- 0.005 * turnover_dollar
+    
+    portfolio_value <- portfolio_value - transaction_cost   # Deduct cost
+    
+    daily_portfolio[length(daily_portfolio)] <- portfolio_value
+    
+    if (turnover > 0) trades <- trades + 1                 # Count the trade
+    
+    weights <- target_weights                               # Update current weights
+    
+    # Rebalance shares on the last day of the quarter
+    rebalance_day <- month_end
+    
+    stock <- function(n) {
+      if (n == 1) return(ADMA$ADMA.Close[[rebalance_day]])
+      else if (n == 2) return(MSFT$MSFT.Close[[rebalance_day]])
+      return(MS$MS.Close[[rebalance_day]])
+    }
+    
+    shares_bought[topseed]    <- (0.375 * portfolio_value) / stock(topseed)
+    shares_bought[middle]     <- (0.375 * portfolio_value) / stock(middle)
+    shares_bought[bottomseed] <- (0.25  * portfolio_value) / stock(bottomseed)
+  }
+}
+```
+
+
+**Performance Evaluation**
+
+The following R code computes the equity curve, drawdown comparison, and key performance metrics directly from the backtest output.
+
+```{r, echo=TRUE, warning=FALSE,message=FALSE,results='asis'}
+library(ggplot2)
+# --------------------- 1. CONVERT TO xts OBJECT FOR ANALYSIS -----------------
+daily_portfolio <- xts(daily_portfolio, 
+                       order.by = index(ADMA)[1:length(daily_portfolio)])
+
+# --------------------- 2. FINAL RESULTS & VISUALS ---------------------
+
+# Create S&P 500 equity curve (same starting capital)
+sp500_equity <- Capital * (sp500$GSPC.Close / as.numeric(sp500$GSPC.Close[1]))
+
+# === Calculate Drawdown ===
+portfolio_dd <- (daily_portfolio / cummax(daily_portfolio) - 1) * 100
+sp500_dd     <- (sp500_equity     / cummax(sp500_equity)     - 1) * 100
+
+# Prepare data for ggplot2
+plot_data <- data.frame(
+  Date      = index(daily_portfolio),
+  Portfolio = as.numeric(daily_portfolio),
+  SP500     = as.numeric(sp500_equity)
+)
+
+drawdown_data <- data.frame(
+  Date      = index(daily_portfolio),
+  Portfolio = as.numeric(portfolio_dd),
+  SP500     = as.numeric(sp500_dd)
+)
+
+# === 1. Equity Curve Plot ===
+ggplot(plot_data, aes(x = Date)) +
+  geom_line(aes(y = Portfolio, color = "Momentum Portfolio"), linewidth = 1.2) +
+  geom_line(aes(y = SP500, color = "S&P 500 Benchmark"), linewidth = 1.0) +
+  labs(title = "Portfolio Equity Curve vs S&P 500 Benchmark",
+       y = "Portfolio Value ($)",
+       x = "Date") +
+  scale_color_manual(values = c("Momentum Portfolio" = "blue", 
+                                "S&P 500 Benchmark" = "red")) +
+  theme_minimal() +
+  theme(legend.position = "top",
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+# === 2. Drawdown Comparison Plot ===
+ggplot(drawdown_data, aes(x = Date)) +
+  geom_line(aes(y = Portfolio, color = "Momentum Portfolio"), linewidth = 1.1) +
+  geom_line(aes(y = SP500, color = "S&P 500 Benchmark"), linewidth = 1.0) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(title = "Drawdown Comparison: Portfolio vs S&P 500",
+       y = "Drawdown (%)",          # Negative = loss
+       x = "Date") +
+  scale_color_manual(values = c("Momentum Portfolio" = "blue", 
+                                "S&P 500 Benchmark" = "red")) +
+  theme_minimal() +
+  theme(legend.position = "top",
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+# --------------------- PERFORMANCE SUMMARY ---------------------
+portfolio_returns <- dailyReturn(daily_portfolio)
+sharpe_ratio      <- mean(portfolio_returns) / sd(portfolio_returns) * sqrt(252)
+
+sp500_returns <- dailyReturn(sp500$GSPC.Close)
+sp500_sharpe  <- mean(sp500_returns) / sd(sp500_returns) * sqrt(252)
+
+# Max Drawdown
+portfolio_max_dd <- min(portfolio_dd)
+sp500_max_dd     <- min(sp500_dd)
+
+total_return      <- as.numeric(tail(daily_portfolio, 1)) / Capital - 1
+days              <- length(daily_portfolio)
+years             <- days / 252
+annualized_return <- (1 + total_return)^(1/years) - 1
+
+results_table <- data.frame(
+  Metric = c(
+    "Total Return (%)",
+    "Annualized Return (%)",
+    "Max Drawdown (Portfolio) (%)",
+    "Max Drawdown (S&P 500) (%)",
+    "Number of Trades",
+    "Sharpe Ratio (Portfolio)",
+    "Sharpe Ratio (S&P 500)",
+    "vs S&P 500 Total Return (%)"
+  ),
+  Value = c(
+    round(total_return * 100, 2),
+    round(annualized_return * 100, 2),
+    round(portfolio_max_dd, 2),
+    round(sp500_max_dd, 2),
+    trades,
+    round(sharpe_ratio, 3),
+    round(sp500_sharpe, 3),
+    round((as.numeric(tail(sp500$GSPC.Close,1)) / as.numeric(sp500$GSPC.Close[1]) - 1) * 100, 2)
+  )
+)
+kable(results_table, caption = "Final Backtest Results", booktabs = TRUE)
+```
+
+**6.1 Reported Performance Metrics**
+
+Our momentum strategy produced a total return of 766.17% over the 2016–2025 period, turning the initial \$1,000,000 into approximately \$8.66 million. This corresponds to an annualised return of 24.17% , indicating very strong long‑term growth.
+
+The strategy’s maximum drawdown was –40.64%, meaning the portfolio lost just over 40% of its value at the worst point before recovering. Although the cumulative returns are high, this drawdown shows that the path was volatile.
+
+The portfolio was rebalanced 29 times over the ten years, which is consistent with a quarterly schedule (approximately 40 possible quarters) – some quarters required no change in weights. This confirms an active but not excessively high‑frequency approach.
+
+The annualised Sharpe ratio (risk‑free rate = 0) was 0.859, suggesting that the strategy delivered a favourable return per unit of volatility.
+
+**6.2 Benchmark Comparison**
+
+The S&P 500 buy‑and‑hold benchmark returned 242.64% over the same period, with an annualised return of approximately 13.1%, a maximum drawdown of –33.92%, and a Sharpe ratio of 0.772.
+
+Our strategy outperformed the benchmark by 523.53 percentage points in total return. The Sharpe ratio (0.859 vs. 0.772) indicates better risk‑adjusted performance. However, the strategy’s drawdown was deeper (–40.64% vs. –33.92%), meaning the higher returns came with larger temporary losses.
+
+**6.3 Effect of Transaction Costs**
+
+Transaction costs are deducted each time the portfolio is rebalanced. The backtest assumes a cost of 0.5% of the turnover amount. With only 29 rebalances over ten years, the total cost drag was relatively small. The average turnover per rebalance was modest, so the net performance remained very high.
+
+Nevertheless, the presence of costs reinforces the importance of controlling turnover. A strategy that appears profitable before costs can become unattractive after frictions. Here, the momentum signal was strong enough to overcome the 0.5% cost, but higher turnover or larger cost assumptions would reduce net returns.
+
+**6.4 Visual Evidence from the Backtest**
+
+Equity curve (first plot above): The portfolio’s value grows much faster than the S&P 500. The blue line ends far above the red line, confirming the large outperformance. The path is also less smooth, indicating higher short‑term volatility.
+
+Drawdown chart (second plot above): Both series experience declines, but the portfolio’s drawdowns are deeper, especially during the 2020 pandemic and other market disruptions. This visual reinforces the trade‑off: higher returns come with larger peak‑to‑trough losses.
+
+**6.5 Interpretation of Results**
+
+Overall, the strategy substantially outperformed the market: a cumulative excess return of 523 percentage points and an annualised return advantage of about 11 percentage points. The momentum rule added significant value during this backtest period.
+
+However, the outperformance came with greater downside risk. The maximum drawdown was nearly 7 percentage points worse than the S&P 500. Whether this is acceptable depends on the investor’s risk tolerance. From a performance perspective, the higher Sharpe ratio justifies the extra risk, but behaviourally, a drawdown exceeding 40% could be difficult for many investors to endure.
+
+Limitations of this analysis include:
+
+- The portfolio contains only three stocks, limiting diversification and generalisability.
+
+- No out‑of‑sample validation is performed; past success does not guarantee future performance.
+
+- Survivorship bias is present (we only included stocks that survived the full period).
+
+Therefore, the results are promising but not conclusive proof of the strategy’s robustness. They should be interpreted as a historical test that the strategy passed, not as a guarantee of future profits.
+
+**Discussion**
+
+**Market Disruptions and Resilience**
+
+Two major market disruptions – the 2020 COVID‑19 pandemic and the “Liberation Day” tariffs announced during the Trump administration – left clear imprints on our portfolio’s equity curve, with noticeable slumps during both events (Faller & Cuevas, 2025). This confirms that even a momentum‑based strategy is not immune to systemic shocks. However, in each case the portfolio recovered strongly, suggesting that the momentum signals helped capture subsequent rebounds once markets stabilised.
+
+**AI‑Driven Outperformance**
+
+Our portfolio began to significantly outperform the S&P 500 in late 2022 and early 2023. This period coincided with a surge in investor confidence around artificial intelligence, which drove Microsoft’s share price from lows of \$235 in late 2022 to highs of \$530 by mid‑2025 (TipRanks, 2025). The momentum strategy captured this trend by consistently ranking Microsoft as a top performer and allocating 37.5% of the portfolio to it each quarter. Without Microsoft’s AI‑driven rally, the excess returns would have been much smaller – a result that highlights both the power of momentum and the risk of concentration in a single stock.
+
+**Limitations**
+
+1. Trend dependency – Momentum strategies work best in trending markets. In choppy or reversal‑prone periods, they can underperform. Our backtest (2016–2025) included strong trends (post‑COVID recovery, AI boom), so out‑of‑sample testing is necessary to confirm robustness.
+
+2. Limited diversification – The portfolio contains only three stocks, which increases exposure to company‑specific risk. The strong results may partly reflect the particular behaviour of the selected stocks rather than the general strength of the strategy.
+
+3. Survivorship bias – We only included stocks that survived the full 2016–2025 period. A more realistic test would have also considered stocks that were delisted or went bankrupt, which would likely lower the reported returns.
+
+**Future Improvements**
+
+- Stop‑loss mechanism – Exiting positions if drawdown exceeds a threshold (e.g., 20%) could limit large losses during sudden reversals.
+
+- Larger stock universe – Including more stocks would improve diversification and make the strategy more generalisable.
+
+- Dynamic rebalancing threshold – Rebalancing only when the change in momentum ranking justifies the transaction cost could reduce unnecessary turnover and improve net performance.
+
+**Conclusion**
+
+Our momentum strategy, which combines monthly ranking, quarterly rebalancing, and a 37.5/37.5/25 weight tilt, delivered a total return of 766.17% over the 2016–2025 period, compared to 242.64% for the S&P 500. The strategy also achieved a higher Sharpe ratio (0.86 vs. 0.77), indicating better risk‑adjusted performance. However, this outperformance came with a deeper maximum drawdown (–40.6% vs. –33.9%), reflecting the higher volatility of ADMA and the concentrated nature of the portfolio.
+
+A key methodological insight from this project is that backtesting does not develop good strategies – it finds bad ones (StarQube, 2025). Our strategy passed this historical falsification test, but past success does not guarantee future profits. The results are promising but should be interpreted with caution: the portfolio contains only three stocks, suffers from survivorship bias, and has not been validated out‑of‑sample.
+
+The main trade‑off is clear: momentum plus quarterly rebalancing and tilted weights can beat the market, but investors must accept higher drawdowns and remember that historical results are not a promise. Future improvements could include a stop‑loss mechanism, a larger stock universe, and dynamic rebalancing thresholds to further control risk and turnover. All code is fully reproducible and provided in this report.
+
+# **References**
+
+ADMA Biologics. (2025, April 28). ADMA Biologics announces U.S. FDA approval of innovative production yield enhancement process. The Globe and Mail. https://www.theglobeandmail.com/investing/markets/stocks/ADMA-Q/pressreleases/32080754/adma-biologics-announces-u-s-fda-approval-of-innovative-production-yield-enhancement-process/
+
+ADMA Biologics. (2026, February 25). ADMA Biologics reports record fourth quarter and full year 2025 financial results and provides business update. ADMA Biologics Investor Relations. https://ir.admabiologics.com/news-releases/news-release-details/adma-biologics-reports-record-fourth-quarter-and-full-year-2025
+
+ADMA Biologics. (n.d.). About ASCENIV (immune globulin intravenous, human). ASCENIV Official Website. https://www.asceniv.com/about
+
+Blackden, R. (2015, July 22). Microsoft struggles to put Nokia behind it. https://www.ft.com/content/11442cae-2fe6-11e5-91ac-a5e17d9b4cff
+
+Faller, M., & Cuevas, F. (2025, October 10). “Liberation day” in retrospect: 6 things that surprised investors. J.P.Morgan Wealth Management. https://www.chase.com/personal/investments/learning-and-insights/article/tmt-october-ten-twenty-five
+
+Gara, A. (2016, April 18). Wealth Management Proves Its Worth for Morgan Stanley as Fixed Income Trading Plummets 54%. Forbes. https://www.forbes.com/sites/antoinegara/2016/04/18/wealth-management-proves-its-worth-for-morgan-stanley-as-fixed-income-trading-plummets-54/
+
+Jegadeesh, N., & Titman, S. (1993). Returns to buying winners and selling losers: Implications for stock market efficiency. The Journal of Finance, 48(1), 65–91. https://doi.org/10.1111/j.1540-6261.1993.tb04702.x
+
+Kelly, G. (2016, January 12). Microsoft abandons “windows 8”: Everything you need to know. Forbes. https://www.forbes.com/sites/gordonkelly/2016/01/12/microsoft-abandons-windows-8/
+Lehrnbecher, T., Russo, A., & Rohde, G. (2025). A survey of diagnosis and therapy of inborn errors of immunity among practice-based physicians and clinic-based pneumologists and hemato-oncologists. Frontiers in Immunology, 16, Article 12177555. https://doi.org/10.3389/fimmu.2025.1597635
+
+Marakhonov, A., Balinova, N., & colleagues. (2026). First 2-year experience of nationwide newborn screening for severe forms of T and B cell immunodeficiency: 2.3 million newborns analyzed using TREC and KREC in Russia. Frontiers in Immunology.  https://doi.org/10.3389/fimmu.2026.1742811
+
+MedTech. (2025, April 11).[Entering the innovation channel! A powerful tool for newborn immunodeficiency screening]. https://www.163.com/dy/article/JSS4FQ9D05340BZM.html[reference:4]
+
+Microsoft. (2025). Microsoft. Microsoft 2015 Annual Report. https://www.microsoft.com/investor/reports/ar15/index.html
+
+Morgan Stanley. (2016). 2016 Shareholder Letter. https://www.morganstanley.com/content/dam/msdotcom/en/about-us2016ams/pdf/2016_Shareholder_Letter.pdf
+
+NASDAQ. (2026, April 10). Is ADMA poised for margin growth and supply expansion in 2026? https://www.nasdaq.com/articles/adma-poised-margin-growth-and-supply-expansion-2026
+
+Popper, N. (2016, February 11). Morgan Stanley to Pay $3.2 Billion Over Flawed Mortgage Bonds. The New York Times. https://www.nytimes.com/2016/02/12/business/dealbook/morgan-stanley-to-pay-3-2-billion-over-flawed-mortgage-bonds.html
+
+StarQube. (2025, October 23). The 7 deadly sins of backtesting investment strategies. StarQube. https://starqube.com/backtesting-investment-strategies/
+
+TipRanks. (2025, June 27). Ai and cloud push microsoft stock (Msft) towards long-term supremacy. Yahoo Finance. https://finance.yahoo.com/news/ai-cloud-push-microsoft-stock-004100907.html
+
+Waters, R. (2016, April 22). Microsoft’s Nadella taps potential of industrial internet of things. Financial Times. https://www.ft.com/content/c8e2e1d0-0861-11e6-a623-b84d06a39ec2?syn-25a6b1a6=1
+
+# **Appendix**
+
+The full R code used in this project is provided below for reproducibility.
+
+```{r appendix-code, eval=FALSE,echo=TRUE}
+# ==============================================================================
+# AMA3232 Programming for Data Science - Mini-Project
+# Momentum Rotation Strategy (Quarterly Rebalancing)
+# Stocks: ADMA (Biotech), MSFT (Technology), MS (Financials)
+# Period: 1 Jan 2016 – 31 Dec 2025
+# Initial Capital: $1,000,000 USD
+# Trading Cost: 0.5% per rebalance
+# ==============================================================================
+
+# --------------------- 1. CLEANING & DATA IMPORT -----------------------------
+library(quantmod)
+library(ggplot2)
+# Download adjusted close prices for our three stocks + benchmark
+# Using Yahoo Finance via quantmod (automatically handles adjusted closes)
+ADMA <- getSymbols("ADMA", src = 'yahoo', 
+                   from = "2016-01-01", to = "2025-12-31", 
+                   auto.assign = FALSE)
+
+MSFT <- getSymbols("MSFT", src = 'yahoo', 
+                   from = "2016-01-01", to = "2025-12-31", 
+                   auto.assign = FALSE)
+
+MS <- getSymbols("MS", src = 'yahoo', 
+                 from = "2016-01-01", to = "2025-12-31", 
+                 auto.assign = FALSE)
+
+# Benchmark: S&P 500
+sp500 <- getSymbols("^GSPC", src = 'yahoo', 
+                    from = "2016-01-01", to = "2025-12-31", 
+                    auto.assign = FALSE)
+
+# Quick check for missing values (should be zero after clean data)
+sum(is.na(ADMA))
+sum(is.na(MSFT))
+sum(is.na(MS))
+sum(is.na(sp500))
+# Verify that all four data series have identical number of rows (i.e., same trading days)
+cat("\n=== Date Alignment Check ===\n")
+cat("ADMA rows:", nrow(ADMA), "| MSFT rows:", nrow(MSFT), 
+    "| MS rows:", nrow(MS), "| S&P 500 rows:", nrow(sp500), "\n")
+if (nrow(ADMA) == nrow(MSFT) && nrow(MSFT) == nrow(MS) && nrow(MS) == nrow(sp500)) {
+  cat("All series contain the same number of trading days. No missing dates require handling.\n")
+} else {
+  cat("Warning: Row counts differ. Data alignment would be needed.\n")
+}
+
+# --------------------- 2. INITIAL PORTFOLIO SETUP -----------------------------
+Capital <- 1000000          # Starting capital = $1,000,000 USD
+
+# Initial equal-weight allocation (33.33% each) on Day 1
+shares_bought <- c((Capital/3)/ADMA$ADMA.Close[[1]],
+                   (Capital/3)/MSFT$MSFT.Close[[1]],
+                   (Capital/3)/MS$MS.Close[[1]])
+
+weights        <- c(rep(1/3, 3))      # Current weights (will be updated quarterly)
+target_weights <- c(0.375, 0.375, 0.25)  # Target weights after ranking: 37.5/37.5/25
+
+trades           <- 0                 # Counter for number of rebalances
+portfolio_value  <- Capital           # Current portfolio value
+daily_portfolio  <- c()               # Vector to store daily portfolio values
+
+# --------------------- 3. MOMENTUM CALCULATION (Main Backtest Loop) -----------
+# This is the core of the strategy: quarterly momentum ranking + rebalancing
+
+last_row <- nrow(ADMA)      # Total number of trading days
+current_row <- 1            # Pointer to the current trading day we are processing
+
+while (current_row <= last_row) {
+  
+  # Monthly Ranking (we process 3 months at a time = 1 quarter)
+  n_quarters <- 0
+  monthly_rankings <- list(month1 = c(), month2 = c(), month3 = c())
+  
+  for (quarter in 1:3) {
+    
+    if (current_row > last_row) break
+    
+    # ------------------- Find the last trading day of this month -------------
+    month_start   <- current_row
+    iterative_day <- current_row
+    month         <- as.integer(substring(as.character(index(ADMA)[iterative_day]), 6, 7))
+    
+    month0 <- month
+    x      <- iterative_day
+    while (x < last_row) {
+      next_day_month <- as.integer(substring(as.character(index(ADMA)[x + 1]), 6, 7))
+      if (next_day_month != month0) break
+      x <- x + 1
+    }
+    month_end <- x                     # Last trading day of the current month
+    
+    # Safety check for very short/partial months at the end of data
+    if (month_end < month_start) {
+      current_row <- last_row + 1
+      break
+    }
+    
+    # ------------------- Record portfolio value on first day of month --------
+    A_day0  <- ADMA$ADMA.Close[[month_start]]
+    Mi_day0 <- MSFT$MSFT.Close[[month_start]]
+    Ms_day0 <- MS$MS.Close[[month_start]]
+    
+    portfolio_value <- A_day0 * shares_bought[1] +
+      Mi_day0 * shares_bought[2] +
+      Ms_day0 * shares_bought[3]
+    daily_portfolio <- c(daily_portfolio, portfolio_value)
+    
+    # ------------------- Calculate daily momentum for the month --------------
+    day_change <- list(ADMA = c(), MSFT = c(), MS = c())
+    
+    for (i in (month_start + 1):month_end) {
+      A_day  <- ADMA$ADMA.Close[[i]]
+      Mi_day <- MSFT$MSFT.Close[[i]]
+      Ms_day <- MS$MS.Close[[i]]
+      
+      # Daily percentage return (no look-ahead bias)
+      A_pct  <- (A_day  / A_day0 - 1) * 100
+      Mi_pct <- (Mi_day / Mi_day0 - 1) * 100
+      Ms_pct <- (Ms_day / Ms_day0 - 1) * 100
+      
+      day_change$ADMA <- c(day_change$ADMA, A_pct)
+      day_change$MSFT <- c(day_change$MSFT, Mi_pct)
+      day_change$MS   <- c(day_change$MS,   Ms_pct)
+      
+      # Update portfolio value for this day
+      portfolio_value <- A_day * shares_bought[1] + 
+        Mi_day * shares_bought[2] + 
+        Ms_day * shares_bought[3]
+      daily_portfolio <- c(daily_portfolio, portfolio_value)
+      
+      # Move forward one day
+      A_day0  <- A_day
+      Mi_day0 <- Mi_day
+      Ms_day0 <- Ms_day
+    }
+    
+    # ------------------- Rank the stocks based on average daily return -------
+    average_day_change <- c(mean(day_change$ADMA), 
+                            mean(day_change$MSFT), 
+                            mean(day_change$MS))
+    
+    seed1 <- which.max(average_day_change)   # Best performer
+    seed3 <- which.min(average_day_change)   # Worst performer
+    seed2 <- 6 - seed1 - seed3               # Middle performer
+    
+    # Store ranking for this month (used for voting later)
+    if (seed1 == 1 & seed2 == 2 & seed3 == 3) {
+      monthly_rankings[[quarter]] <- c("ADMA", "MSFT", "MS")
+    } else if (seed1 == 1 & seed2 == 3 & seed3 == 2) {
+      monthly_rankings[[quarter]] <- c("ADMA", "MS", "MSFT")
+    } else if (seed1 == 2 & seed2 == 1 & seed3 == 3) {
+      monthly_rankings[[quarter]] <- c("MSFT", "ADMA", "MS")
+    } else if (seed1 == 2 & seed2 == 3 & seed3 == 1) {
+      monthly_rankings[[quarter]] <- c("MSFT", "MS", "ADMA")
+    } else if (seed1 == 3 & seed2 == 2 & seed3 == 1) {
+      monthly_rankings[[quarter]] <- c("MS", "MSFT", "ADMA")
+    } else if (seed1 == 3 & seed2 == 1 & seed3 == 2) {
+      monthly_rankings[[quarter]] <- c("MS", "ADMA", "MSFT")
+    }
+    
+    # Move to the next month
+    current_row <- month_end + 1
+    n_quarters  <- n_quarters + 1
+  }
+  
+  # --------------------- 4. REBALANCING (only after full 3-month quarter) -----
+  if (n_quarters == 3) {
+    
+    # Voting: count how many times each stock ranked 1st, 2nd, or 3rd
+    A_ranks  <- c()
+    Mi_ranks <- c()
+    Ms_ranks <- c()
+    
+    for (i in 1:3) {
+      if (monthly_rankings[[i]][1] == "ADMA") A_ranks  <- c(A_ranks,  1)
+      if (monthly_rankings[[i]][1] == "MSFT") Mi_ranks <- c(Mi_ranks, 1)
+      if (monthly_rankings[[i]][1] == "MS")   Ms_ranks <- c(Ms_ranks, 1)
+      
+      if (monthly_rankings[[i]][2] == "ADMA") A_ranks  <- c(A_ranks,  2)
+      if (monthly_rankings[[i]][2] == "MSFT") Mi_ranks <- c(Mi_ranks, 2)
+      if (monthly_rankings[[i]][2] == "MS")   Ms_ranks <- c(Ms_ranks, 2)
+      
+      if (monthly_rankings[[i]][3] == "ADMA") A_ranks  <- c(A_ranks,  3)
+      if (monthly_rankings[[i]][3] == "MSFT") Mi_ranks <- c(Mi_ranks, 3)
+      if (monthly_rankings[[i]][3] == "MS")   Ms_ranks <- c(Ms_ranks, 3)
+    }
+    
+    mean_A_ranks  <- mean(A_ranks)
+    mean_Mi_ranks <- mean(Mi_ranks)
+    mean_Ms_ranks <- mean(Ms_ranks)
+    
+    # Tie-breaker logic (use the most recent ranking)
+    if (mean_A_ranks == mean_Mi_ranks & mean_A_ranks == mean_Ms_ranks & mean_Ms_ranks == mean_Mi_ranks) {
+      mean_A_ranks  <- A_ranks[3]
+      mean_Mi_ranks <- Mi_ranks[3]
+      mean_Ms_ranks <- Ms_ranks[3]
+    } else if (mean_A_ranks == mean_Ms_ranks) {
+      mean_A_ranks  <- A_ranks[3]
+      mean_Ms_ranks <- Ms_ranks[3]
+    } else if (mean_A_ranks == mean_Mi_ranks) {
+      mean_A_ranks  <- A_ranks[3]
+      mean_Mi_ranks <- Mi_ranks[3]
+    } else if (mean_Ms_ranks == mean_Mi_ranks) {
+      mean_Ms_ranks <- Ms_ranks[3]
+      mean_Mi_ranks <- Mi_ranks[3]
+    }
+    
+    ranks <- c(mean_A_ranks, mean_Mi_ranks, mean_Ms_ranks)
+    
+    topseed    <- which.min(ranks)      # Best overall
+    bottomseed <- which.max(ranks)      # Worst overall
+    middle     <- 6 - topseed - bottomseed
+    
+    # Apply new target weights
+    target_weights[topseed]    <- 0.375
+    target_weights[middle]     <- 0.375
+    target_weights[bottomseed] <- 0.25
+    
+    # Calculate turnover and transaction costs (0.5%)
+    turnover        <- 0.5 * sum(abs(target_weights - weights))
+    turnover_dollar <- turnover * portfolio_value
+    transaction_cost <- 0.005 * turnover_dollar
+    
+    portfolio_value <- portfolio_value - transaction_cost   # Deduct cost
+    
+    daily_portfolio[length(daily_portfolio)] <- portfolio_value
+    
+    if (turnover > 0) trades <- trades + 1                 # Count the trade
+    
+    weights <- target_weights                               # Update current weights
+    
+    # Rebalance shares on the last day of the quarter
+    rebalance_day <- month_end
+    
+    stock <- function(n) {
+      if (n == 1) return(ADMA$ADMA.Close[[rebalance_day]])
+      else if (n == 2) return(MSFT$MSFT.Close[[rebalance_day]])
+      return(MS$MS.Close[[rebalance_day]])
+    }
+    
+    shares_bought[topseed]    <- (0.375 * portfolio_value) / stock(topseed)
+    shares_bought[middle]     <- (0.375 * portfolio_value) / stock(middle)
+    shares_bought[bottomseed] <- (0.25  * portfolio_value) / stock(bottomseed)
+  }
+}
+
+# --------------------- 5. CONVERT TO xts OBJECT FOR ANALYSIS -----------------
+daily_portfolio <- xts(daily_portfolio, 
+                       order.by = index(ADMA)[1:length(daily_portfolio)])
+
+# --------------------- 6. FINAL RESULTS & VISUALS ---------------------
+
+# Create S&P 500 equity curve (same starting capital)
+sp500_equity <- Capital * (sp500$GSPC.Close / as.numeric(sp500$GSPC.Close[1]))
+
+# === Calculate Drawdown ===
+portfolio_dd <- (daily_portfolio / cummax(daily_portfolio) - 1) * 100
+sp500_dd     <- (sp500_equity     / cummax(sp500_equity)     - 1) * 100
+
+# Prepare data for ggplot2
+plot_data <- data.frame(
+  Date      = index(daily_portfolio),
+  Portfolio = as.numeric(daily_portfolio),
+  SP500     = as.numeric(sp500_equity)
+)
+
+drawdown_data <- data.frame(
+  Date      = index(daily_portfolio),
+  Portfolio = as.numeric(portfolio_dd),
+  SP500     = as.numeric(sp500_dd)
+)
+
+# === 1. Equity Curve Plot ===
+ggplot(plot_data, aes(x = Date)) +
+  geom_line(aes(y = Portfolio, color = "Momentum Portfolio"), linewidth = 1.2) +
+  geom_line(aes(y = SP500, color = "S&P 500 Benchmark"), linewidth = 1.0) +
+  labs(title = "Portfolio Equity Curve vs S&P 500 Benchmark",
+       y = "Portfolio Value ($)",
+       x = "Date") +
+  scale_color_manual(values = c("Momentum Portfolio" = "blue", 
+                                "S&P 500 Benchmark" = "red")) +
+  theme_minimal() +
+  theme(legend.position = "top",
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+# === 2. Drawdown Comparison Plot ===
+ggplot(drawdown_data, aes(x = Date)) +
+  geom_line(aes(y = Portfolio, color = "Momentum Portfolio"), linewidth = 1.1) +
+  geom_line(aes(y = SP500, color = "S&P 500 Benchmark"), linewidth = 1.0) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(title = "Drawdown Comparison: Portfolio vs S&P 500",
+       y = "Drawdown (%)",          # Negative = loss
+       x = "Date") +
+  scale_color_manual(values = c("Momentum Portfolio" = "blue", 
+                                "S&P 500 Benchmark" = "red")) +
+  theme_minimal() +
+  theme(legend.position = "top",
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+# --------------------- 7. PERFORMANCE SUMMARY ---------------------
+portfolio_returns <- dailyReturn(daily_portfolio)
+sharpe_ratio      <- mean(portfolio_returns) / sd(portfolio_returns) * sqrt(252)
+
+sp500_returns <- dailyReturn(sp500$GSPC.Close)
+sp500_sharpe  <- mean(sp500_returns) / sd(sp500_returns) * sqrt(252)
+
+# Max Drawdown
+portfolio_max_dd <- min(portfolio_dd)
+sp500_max_dd     <- min(sp500_dd)
+
+total_return      <- as.numeric(tail(daily_portfolio, 1)) / Capital - 1
+days              <- length(daily_portfolio)
+years             <- days / 252
+annualized_return <- (1 + total_return)^(1/years) - 1
+
+cat("\n=== FINAL BACKTEST RESULTS ===\n")
+cat("Total Return:                ", round(total_return * 100, 2), "%\n")
+cat("Annualized Return:           ", round(annualized_return * 100, 2), "%\n")
+cat("Max Drawdown (Portfolio):    ", round(portfolio_max_dd, 2), "%\n")
+cat("Max Drawdown (S&P 500):      ", round(sp500_max_dd, 2), "%\n")
+cat("Number of Trades:            ", trades, "\n")
+cat("Sharpe Ratio (Portfolio):    ", round(sharpe_ratio, 3), "\n")
+cat("Sharpe Ratio (S&P 500):      ", round(sp500_sharpe, 3), "\n")
+cat("vs S&P 500 Total Return:     ", 
+    round((as.numeric(tail(sp500$GSPC.Close,1)) / as.numeric(sp500$GSPC.Close[1]) - 1) * 100, 2), "%\n")
+#--------------------- 8. SUMMARY STATISTICS FOR THE THREE STOCKS ------------
+  stock_returns <- merge(
+    dailyReturn(ADMA$ADMA.Close, type = "log"),
+    dailyReturn(MSFT$MSFT.Close, type = "log"),
+    dailyReturn(MS$MS.Close, type = "log")
+  )
+colnames(stock_returns) <- c("ADMA", "MSFT", "MS")
+
+annual_return <- colMeans(stock_returns, na.rm = TRUE) * 252
+annual_vol    <- apply(stock_returns, 2, sd, na.rm = TRUE) * sqrt(252)
+corr_matrix   <- cor(stock_returns, use = "complete.obs")
+
+summary_table <- data.frame(
+  Stock = c("ADMA", "MSFT", "MS"),
+  `Annualized Return (%)`     = round(annual_return * 100, 2),
+  `Annualized Volatility (%)` = round(annual_vol * 100, 2)
+)
+
+cat("\n=== SUMMARY STATISTICS TABLE (2016–2025) ===\n")
+print(summary_table, row.names = FALSE)
+
+cat("\n=== CORRELATION MATRIX (Daily Log Returns) ===\n")
+print(round(corr_matrix, 3))
+```
+
